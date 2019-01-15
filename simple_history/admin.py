@@ -159,7 +159,8 @@ class SimpleHistoryAdmin(admin.ModelAdmin):
         formset = []
 
         historical_date = historical_obj.history_date
-        adjusted_historical_date = historical_date + datetime.timedelta(seconds=5)
+        adjusted_historical_start_date = historical_date + datetime.timedelta(seconds=-1)
+        adjusted_historical_end_date = historical_date + datetime.timedelta(seconds=5)
         for FormSet, inline in self.get_admin_formsets_with_inline(
                 *[request]):
             prefix = FormSet.get_default_prefix()
@@ -171,8 +172,8 @@ class SimpleHistoryAdmin(admin.ModelAdmin):
             inline_ids = inline_qs.values_list('id', flat=True)
             history_inline_model = inline_qs.first().history.model
             historical_ids = history_inline_model.objects\
-                                    .filter(id__in=inline_ids, history_date__lte=adjusted_historical_date)\
-                                    .order_by('-history_date')[:inline_qs.count()]\
+                                    .filter(id__in=inline_ids, history_date__range=(adjusted_historical_start_date, adjusted_historical_end_date))\
+                                    .order_by('-history_date')\
                                     .values_list('history_id', flat=True)
             historical_queryset = history_inline_model.objects.filter(history_id__in=historical_ids)
 
