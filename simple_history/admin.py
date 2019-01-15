@@ -1,5 +1,6 @@
 from __future__ import unicode_literals
 
+import datetime
 from django import http
 from django.core.exceptions import PermissionDenied
 from django.conf.urls import url
@@ -107,10 +108,11 @@ class SimpleHistoryAdmin(admin.ModelAdmin):
         model = getattr(
             self.model,
             self.model._meta.simple_history_manager_attribute).model
-        obj = get_object_or_404(model, **{
+        historical_obj = get_object_or_404(model, **{
             original_opts.pk.attname: object_id,
             'history_id': version_id,
-        }).instance
+        })
+        obj = historical_obj.instance
         obj._state.adding = False
 
         if not self.has_change_permission(request, obj):
@@ -156,16 +158,28 @@ class SimpleHistoryAdmin(admin.ModelAdmin):
         prefixes = {}
         formset = []
 
+        historical_date = historical_obj.history_date
+        adjusted_historical_date = historical_date + datetime.timedelta(seconds=5)
         for FormSet, inline in self.get_admin_formsets_with_inline(
                 *[request]):
             prefix = FormSet.get_default_prefix()
             prefixes[prefix] = prefixes.get(prefix, 0) + 1
             if prefixes[prefix] != 1 or not prefix:
                 prefix = "%s-%s" % (prefix, prefixes[prefix])
+
+            inline_qs = inline.get_queryset(request)
+            inline_ids = inline_qs.values_list('id', flat=True)
+            history_inline_model = inline_qs.first().history.model
+            historical_ids = history_inline_model.objects\
+                                    .filter(id__in=inline_ids, history_date__lte=adjusted_historical_date)\
+                                    .order_by('-history_date')[:inline_qs.count()]\
+                                    .values_list('history_id', flat=True)
+            historical_queryset = history_inline_model.objects.filter(history_id__in=historical_ids)
+
             formset_params = {
                 'instance': obj,
                 'prefix': prefix,
-                'queryset': inline.get_queryset(request),
+                'queryset': historical_queryset,
             }
             if request.method == 'POST':
                 formset_params.update({
